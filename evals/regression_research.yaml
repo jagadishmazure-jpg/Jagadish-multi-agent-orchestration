@@ -1,0 +1,18 @@
+# Regression eval for the research-team scenario.
+# Run: pytest tests/test_scenarios.py -k research
+name: research-team-regression
+scenario: research_team
+inputs:
+  topic: "The history of Python"
+expect:
+  agents_involved:
+    - planner
+    - researcher
+    - writer
+    - critic
+  final_contains:
+    - Python
+    - Guido
+    - "1991"
+  max_steps: 12
+  no_errors: true
