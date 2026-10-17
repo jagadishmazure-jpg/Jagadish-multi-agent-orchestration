@@ -4,7 +4,7 @@ import pytest
 
 from orchestrator.core import Agent, Message, MessageRole, TaskState
 from orchestrator.llm import FakeLLM
-from orchestrator.patterns import Blackboard, Router, SequentialPipeline, Supervisor
+from orchestrator.patterns import Blackboard, Router, SequentialPipeline, Supervisor, UnknownRouteError
 from orchestrator.tools import (
     MaxIterationsError,
     ToolCallingLoop,
@@ -95,7 +95,7 @@ def test_router_unmatched_without_default():
         llm=FakeLLM(default="CATEGORY: unknown_zone"),
     )
     router = Router(clf, {"a": _agent("a")})
-    with pytest.raises(Exception):
+    with pytest.raises(UnknownRouteError):
         router.run("task")
 
 

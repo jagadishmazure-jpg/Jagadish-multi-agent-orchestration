@@ -2,7 +2,7 @@
 
 import pytest
 
-from orchestrator.core import Agent, Message, MessageRole, TaskState
+from orchestrator.core import Agent, MessageRole, TaskState
 from orchestrator.llm import FakeLLM
 from orchestrator.tools import (
     MaxIterationsError,
