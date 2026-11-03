@@ -9,7 +9,7 @@
 | Offline component | Azure service (planned) | Notes |
 |---|---|---|
 | `LLMClient` | Azure OpenAI chat completions with tool calling | Managed identity |
-| Patterns | Microsoft Agent Framework or Azure AI Foundry Agent Service workflows | Keep the same pattern choice |
+| Patterns | Microsoft Agent Framework or Microsoft Foundry Agent Service workflows | Keep the same pattern choice |
 | Tools | Functions or MCP servers behind APIM |  |
 | Trajectories | OpenTelemetry spans to Application Insights |  |
 | Human handoff | Service Bus queue to a support tool |  |
