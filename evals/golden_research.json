@@ -1,0 +1,36 @@
+{
+  "name": "research-and-report",
+  "notes": "Same four-stage article as scenarios/research_team.py for python-history. The other two cases use the same stage shape so CrewAI, LangGraph, and Microsoft Agent Framework can be scored on one set.",
+  "cases": [
+    {
+      "id": "python-history",
+      "topic": "The history of Python",
+      "match": ["python"],
+      "keywords": ["Guido van Rossum", "1991", "APPROVED"],
+      "plan": "RESEARCH PLAN:\n1. Gather key facts and dates\n2. Identify the creator and origins\n3. Draft the findings",
+      "findings": "FINDINGS: Python was created by Guido van Rossum and first released in 1991. Its design emphasizes readability with significant indentation. Python 3 arrived in 2008.",
+      "draft": "DRAFT ARTICLE: Python, created by Guido van Rossum and released in 1991, is a readable, indentation-based language that grew into one of the world's most popular programming languages.",
+      "review": "CRITIC REVIEW: APPROVED. The Python article correctly names the creator (Guido van Rossum) and the release year (1991)."
+    },
+    {
+      "id": "http-origins",
+      "topic": "The origins of HTTP",
+      "match": ["http"],
+      "keywords": ["Tim Berners-Lee", "CERN", "1991", "APPROVED"],
+      "plan": "RESEARCH PLAN:\n1. Name who introduced the protocol\n2. Record the organisation and the year\n3. Draft the findings",
+      "findings": "FINDINGS: HTTP was introduced by Tim Berners-Lee at CERN in 1991 as the application protocol of the World Wide Web.",
+      "draft": "DRAFT ARTICLE: HTTP, introduced by Tim Berners-Lee at CERN in 1991, is the application protocol that carries the World Wide Web.",
+      "review": "CRITIC REVIEW: APPROVED. The article names Tim Berners-Lee, CERN, and the year 1991."
+    },
+    {
+      "id": "relational-model",
+      "topic": "The relational database model",
+      "match": ["relational"],
+      "keywords": ["Edgar F. Codd", "1970", "APPROVED"],
+      "plan": "RESEARCH PLAN:\n1. Name who proposed the model\n2. Record the year of the paper\n3. Draft the findings",
+      "findings": "FINDINGS: The relational model was proposed by Edgar F. Codd in 1970. Data is organised in tables of rows and columns.",
+      "draft": "DRAFT ARTICLE: The relational database model, proposed by Edgar F. Codd in 1970, stores data in tables of rows and columns.",
+      "review": "CRITIC REVIEW: APPROVED. The article names Edgar F. Codd and the year 1970."
+    }
+  ]
+}

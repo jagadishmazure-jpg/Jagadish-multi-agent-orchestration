@@ -7,6 +7,9 @@ real run shown in the README.
 - Fail loudly: an unmatched ticket raises instead of going to the wrong specialist.
 - Budgets everywhere: tool loop iterations and blackboard rounds are capped.
 - Trajectories make agent runs testable, not just their final answers.
+- The same research article is a CrewAI crew, a LangGraph graph, and an Agent Framework workflow. On the mock they tie on quality and latency (four calls each); LangGraph spends fewer prompt tokens because a node sees only the previous stage.
+- ReWOO plans every tool call, then runs them without the model. Plan-and-execute replans after each step, so it costs more than ReAct on the same tasks. The live Azure rows are blank until someone runs `--live`.
+- The research crew publishes an A2A card and joins the in-process mesh. The repo did not already have one.
 
 ## Likely follow-up questions
 
