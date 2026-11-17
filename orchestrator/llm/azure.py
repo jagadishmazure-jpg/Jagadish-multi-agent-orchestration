@@ -15,8 +15,7 @@ from urllib.parse import quote
 
 from ..core.messages import Message, MessageRole
 from .client import LLMResponse, ToolCall
-
-DEFAULT_API_VERSION = "2024-10-21"
+from .config import DEFAULT_API_VERSION, azure_config
 
 
 class AzureOpenAIError(RuntimeError):
@@ -49,8 +48,6 @@ class AzureOpenAIClient:
 
     @classmethod
     def from_env(cls) -> AzureOpenAIClient:
-        from .factory import azure_config
-
         config = azure_config()
         if config is None:
             raise AzureOpenAIError(
