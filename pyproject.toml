@@ -1,13 +1,20 @@
 [project]
 name = "jagadish-multi-agent-orchestration"
 version = "0.1.0"
-description = "Multi-agent orchestration patterns as code: supervisor, router, sequential, blackboard, and hierarchical — fully offline with a deterministic fake LLM."
+description = "Multi-agent orchestration patterns as code, plus CrewAI, LangGraph, and Agent Framework on one research task, and plan-and-execute vs ReWOO vs ReAct. Offline mock by default; Azure OpenAI when configured."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Jagadish" }]
 keywords = ["agents", "orchestration", "llm", "multi-agent"]
 dependencies = []
+
+[project.optional-dependencies]
+frameworks = [
+    "langgraph>=1.0,<2",
+    "crewai>=1.6,<2",
+    "agent-framework>=1.22,<2",
+]
 
 [dependency-groups]
 dev = [

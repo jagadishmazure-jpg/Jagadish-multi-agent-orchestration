@@ -107,8 +107,39 @@ Watch for: plans naming unknown teams (`UnknownTeamError`).
 
 - **Tool loop** (`orchestrator/tools/loop.py`): ReAct-style loop with an
   iteration budget (`MaxIterationsError`), strict tool validation, and visible
-  failure modes (unknown tool, agent errors).
+  failure modes (unknown tool, agent errors). This is the ReAct baseline in
+  the control-pattern comparison.
 - **Trajectory recorder** (`orchestrator/eval/recorder.py`): ordered event log
   for every run — the basis of the regression evals.
 - **Checks** (`orchestrator/eval/checks.py`): keyword presence, subtask
   completion, error-free runs, step budgets, agent participation.
+
+## 6. Plan-and-execute — planner, executor, replanner
+
+A planner writes a list of `tool: query` steps. The executor runs the first
+step (one model call, one tool). The replanner either returns the remaining
+plan or `FINAL: <answer>`. On two of the three tasks the first plan is
+incomplete, and the replanner adds the missing lookups and the calculator
+step. The graph is the LangGraph shape (`StateGraph` when that package is
+installed, the same nodes on the builtin graph otherwise).
+
+```
+  planner --> executor --> replanner -- plan left --> executor
+                              |
+                              +-- FINAL --> end
+```
+
+## 7. ReWOO — plan, then tools, then solve
+
+The planner emits every call at once:
+
+```
+#E1 = search[capital of France]
+#E3 = search[population of #E1]
+#E5 = calculator[#E3+#E4]
+```
+
+The worker substitutes `#E` references and calls tools with no model turn in
+between. The solver writes the answer from the evidence. On this task set
+that is two model calls, against 13 for ReAct and 23 for plan-and-execute.
+Numbers are in the README and come from `python examples/compare_control.py`.

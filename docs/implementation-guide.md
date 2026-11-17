@@ -1,14 +1,14 @@
 # Implementation guide: from offline build to Azure
 
-> Status: **planned**. Nothing here has been deployed. The offline build in this
-> repository is what exists today; this guide is how it would be taken to a
-> real Azure environment.
+> Status: **partly built**. The Azure OpenAI chat client exists and is selected
+> when its env vars are set. Nothing has been deployed, and CI does not call
+> Azure. This guide is how the offline build would be taken to a real tenant.
 
 ## Azure service mapping
 
 | Offline component | Azure service (planned) | Notes |
 |---|---|---|
-| `LLMClient` | Azure OpenAI chat completions with tool calling | Managed identity |
+| `LLMClient` | Azure OpenAI chat completions with tool calling | Client is in `orchestrator/llm/azure.py`. CI uses the mock. |
 | Patterns | Microsoft Agent Framework or Microsoft Foundry Agent Service workflows | Keep the same pattern choice |
 | Tools | Functions or MCP servers behind APIM |  |
 | Trajectories | OpenTelemetry spans to Application Insights |  |
@@ -16,7 +16,7 @@
 
 ## Steps
 
-1. Implement `LLMClient` against Azure OpenAI; keep `FakeLLM` for tests.
+1. Point `AzureOpenAIClient` at a deployment (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`) and fill the live rows with `python examples/compare_frameworks.py --live` and `python examples/compare_control.py --live`. Keep the mock for tests.
 2. Pick the pattern per use case: router for triage, sequential for fixed pipelines, supervisor for open tasks.
 3. Add a default human-queue route for unmatched tickets.
 4. Export trajectories as traces and load the YAML expectations in the regression tests.
