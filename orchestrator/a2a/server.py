@@ -9,12 +9,14 @@ mesh the crew joins.
 
 from __future__ import annotations
 
+import copy
 import json
+import socket
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from ..frameworks.crewai_research import run_crewai_research
-from ..frameworks.mock import ResearchMockLLM
 
 AGENT_CARD_PATHS = (
     "/.well-known/agent-card.json",
@@ -25,6 +27,10 @@ RPC_PATHS = ("/", "/rpc", "/a2a")
 _SEND = {"message/send", "SendMessage"}
 _GET = {"tasks/get", "GetTask"}
 _CANCEL = {"tasks/cancel", "CancelTask"}
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+_MAX_BODY = 64 * 1024
+_READ_TIMEOUT_S = 5
+_DEFAULT_TASKS = 32
 
 
 def research_crew_card(url: str = "http://127.0.0.1:8089/") -> dict[str, Any]:
@@ -34,6 +40,7 @@ def research_crew_card(url: str = "http://127.0.0.1:8089/") -> dict[str, Any]:
         "description": (
             "CrewAI crew that plans research, gathers findings, drafts a report, and reviews it."
         ),
+        "protocolVersion": "0.3.0",
         "version": "0.1.0",
         "url": url,
         "capabilities": {
@@ -64,14 +71,21 @@ class ResearchCrewServer:
         *,
         backend: str = "builtin",
         url: str = "http://127.0.0.1:8089/",
+        max_tasks: int = _DEFAULT_TASKS,
     ) -> None:
         # ``llm is None`` lets the crew runner pick Azure OpenAI when that
         # environment is fully set, and the scripted mock otherwise.
+        if max_tasks < 1:
+            raise ValueError("max_tasks must be >= 1")
         self.llm = llm
         self.backend = backend
         self.card = research_crew_card(url)
+        self.max_tasks = max_tasks
         self.tasks: dict[str, dict] = {}
+        self._order: list[str] = []
+        self._by_request: dict[Any, str] = {}
         self._seq = 0
+        self._lock = threading.Lock()
 
     def handle(self, request: Any) -> dict:
         if not isinstance(request, dict):
@@ -92,6 +106,10 @@ class ResearchCrewServer:
         return _error(request_id, -32601, f"method not found: {method}")
 
     def _send(self, request_id: Any, params: dict) -> dict:
+        with self._lock:
+            cached = self._cached(request_id)
+        if cached is not None:
+            return cached
         text = message_text(params)
         if not text:
             return _error(request_id, -32602, "message has no text part")
@@ -99,50 +117,88 @@ class ResearchCrewServer:
             run = run_crewai_research(text, llm=self.llm, backend=self.backend)
         except ValueError as exc:
             return _error(request_id, -32602, str(exc))
-        self._seq += 1
-        task = {
-            "id": f"task-{self._seq}",
-            "contextId": f"ctx-{self._seq}",
-            "status": {"state": "completed"},
-            "history": [
-                {
-                    "role": "user",
-                    "messageId": f"user-{self._seq}",
-                    "parts": [{"kind": "text", "text": text}],
-                },
-                {
-                    "role": "agent",
-                    "messageId": f"agent-{self._seq}",
-                    "parts": [{"kind": "text", "text": run.final}],
-                },
-            ],
-            "artifacts": [
-                {
-                    "artifactId": f"report-{self._seq}",
-                    "name": "research-report",
-                    "parts": [{"kind": "text", "text": run.final}],
-                }
-            ],
-        }
+        except Exception:
+            return _error(request_id, -32000, "research crew failed")
+        # message/send finishes before it returns, so the caller receives a
+        # completed task. Cancel applies to a task still marked working.
+        with self._lock:
+            cached = self._cached(request_id)
+            if cached is not None:
+                return cached
+            self._seq += 1
+            number = self._seq
+            report = run.stages.get("draft") or run.final
+            review = run.stages.get("review") or run.final
+            task = {
+                "id": f"task-{number}",
+                "contextId": f"ctx-{number}",
+                "status": {"state": "completed"},
+                "history": [
+                    {
+                        "role": "user",
+                        "messageId": f"user-{number}",
+                        "parts": [{"kind": "text", "text": text}],
+                    },
+                    {
+                        "role": "agent",
+                        "messageId": f"agent-{number}",
+                        "parts": [{"kind": "text", "text": report}],
+                    },
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": f"report-{number}",
+                        "name": "research-report",
+                        "parts": [{"kind": "text", "text": report}],
+                    },
+                    {
+                        "artifactId": f"review-{number}",
+                        "name": "critic-review",
+                        "parts": [{"kind": "text", "text": review}],
+                    },
+                ],
+            }
+            self._remember(task, request_id)
+            return {"jsonrpc": "2.0", "id": request_id, "result": copy.deepcopy(task)}
+
+    def _cached(self, request_id: Any) -> dict | None:
+        if request_id is None or request_id not in self._by_request:
+            return None
+        task = self.tasks.get(self._by_request[request_id])
+        if task is None:
+            return None
+        return {"jsonrpc": "2.0", "id": request_id, "result": copy.deepcopy(task)}
+
+    def _remember(self, task: dict, request_id: Any) -> None:
         self.tasks[task["id"]] = task
-        return {"jsonrpc": "2.0", "id": request_id, "result": task}
+        self._order.append(task["id"])
+        if request_id is not None:
+            self._by_request[request_id] = task["id"]
+        while len(self._order) > self.max_tasks:
+            dropped = self._order.pop(0)
+            self.tasks.pop(dropped, None)
+            stale = [key for key, value in self._by_request.items() if value == dropped]
+            for key in stale:
+                del self._by_request[key]
 
     def _get(self, request_id: Any, params: dict) -> dict:
-        task = self.tasks.get(_task_id(params))
-        if task is None:
-            return _error(request_id, -32602, "task not found")
-        return {"jsonrpc": "2.0", "id": request_id, "result": task}
+        with self._lock:
+            task = self.tasks.get(_task_id(params))
+            if task is None:
+                return _error(request_id, -32602, "task not found")
+            return {"jsonrpc": "2.0", "id": request_id, "result": copy.deepcopy(task)}
 
     def _cancel(self, request_id: Any, params: dict) -> dict:
-        task_id = _task_id(params)
-        task = self.tasks.get(task_id)
-        if task is None:
-            return _error(request_id, -32602, "task not found")
-        state = (task.get("status") or {}).get("state")
-        if state in {"completed", "canceled", "failed"}:
-            return _error(request_id, -32602, f"task {task_id} is {state} and cannot be cancelled")
-        task["status"] = {"state": "canceled"}
-        return {"jsonrpc": "2.0", "id": request_id, "result": task}
+        with self._lock:
+            task_id = _task_id(params)
+            task = self.tasks.get(task_id)
+            if task is None:
+                return _error(request_id, -32602, "task not found")
+            state = (task.get("status") or {}).get("state")
+            if state in {"completed", "canceled", "failed"}:
+                return _error(request_id, -32602, f"task {task_id} is {state} and cannot be cancelled")
+            task["status"] = {"state": "canceled"}
+            return {"jsonrpc": "2.0", "id": request_id, "result": copy.deepcopy(task)}
 
 
 def message_text(params: dict) -> str:
@@ -182,9 +238,12 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler name
         path = self.path.split("?", 1)[0]
-        server: ResearchCrewServer = self.server.a2a  # type: ignore[attr-defined]
         if path in AGENT_CARD_PATHS:
-            self._send(200, server.card)
+            card = getattr(self.server, "card", None)
+            if card is None:
+                crew: ResearchCrewServer = self.server.a2a  # type: ignore[attr-defined]
+                card = crew.card
+            self._send(200, card)
             return
         self._send(404, {"error": "not found"})
 
@@ -193,15 +252,32 @@ class _Handler(BaseHTTPRequestHandler):
         if path not in RPC_PATHS:
             self._send(404, {"error": "not found"})
             return
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        raw = self.rfile.read(length) if length else b""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self._send(400, _error(None, -32700, "invalid content length"))
+            return
+        if length < 0 or length > _MAX_BODY:
+            self._send(413, _error(None, -32600, "request body too large"))
+            return
+        self.connection.settimeout(_READ_TIMEOUT_S)
+        try:
+            raw = self.rfile.read(length) if length else b""
+        except (TimeoutError, socket.timeout):
+            self._send(408, _error(None, -32603, "request timed out"))
+            return
         try:
             payload = json.loads(raw.decode("utf-8") or "null")
         except json.JSONDecodeError:
             self._send(400, _error(None, -32700, "parse error"))
             return
         server: ResearchCrewServer = self.server.a2a  # type: ignore[attr-defined]
-        self._send(200, server.handle(payload))
+        try:
+            result = server.handle(payload)
+        except Exception:
+            request_id = payload.get("id") if isinstance(payload, dict) else None
+            result = _error(request_id, -32000, "internal error")
+        self._send(200, result)
 
     def log_message(self, fmt: str, *args: Any) -> None:
         return
@@ -219,20 +295,32 @@ def serve(
     server: ResearchCrewServer | None = None,
     host: str = "127.0.0.1",
     port: int = 0,
+    *,
+    advertise_host: str | None = None,
 ) -> ThreadingHTTPServer:
     """Start the crew's A2A HTTP server on ``port`` (0 picks a free port).
 
-    The returned server is already running on a daemon thread. Call
-    ``shutdown`` and ``server_close`` when finished. The bound URL is written
-    back onto the agent card.
-    """
-    import threading
+    The HTTP binding is loopback only. It is a local demo, not a networked
+    service, so it does not accept a public bind address. Each listener keeps
+    its own agent card, so starting a second listener does not change the URL
+    the first one advertises. ``llm`` defaults to ``None`` on a new server,
+    which selects Azure OpenAI when that environment is fully set.
 
-    crew = server if server is not None else ResearchCrewServer(llm=ResearchMockLLM())
+    The returned server is already running on a daemon thread. Call
+    ``shutdown`` and ``server_close`` when finished.
+    """
+    if host not in _LOOPBACK:
+        raise ValueError(
+            "the A2A demo server only binds to loopback (127.0.0.1, localhost, or ::1)"
+        )
+    shown = advertise_host or ("127.0.0.1" if host == "localhost" else host)
+    if shown in {"0.0.0.0", "::", ""}:
+        raise ValueError("advertise_host must be a client-reachable address")
+    crew = server if server is not None else ResearchCrewServer()
     httpd = ThreadingHTTPServer((host, port), _Handler)
     httpd.a2a = crew  # type: ignore[attr-defined]
     bound = httpd.server_address[1]
-    crew.card = research_crew_card(f"http://{host}:{bound}/")
+    httpd.card = research_crew_card(f"http://{shown}:{bound}/")  # type: ignore[attr-defined]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     return httpd

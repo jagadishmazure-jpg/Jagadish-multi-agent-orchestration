@@ -134,7 +134,7 @@ framework        quality  prompt_tokens  completion_tokens  total_tokens  latenc
 ---------------  -------  -------------  -----------------  ------------  ----------  ---------  ----------  -----  -------
 crewai           1.00     1466           359                1825          60          12         249         3/3    builtin
 langgraph        1.00     784            359                1143          60          12         90          3/3    builtin
-agent_framework  1.00     1072           359                1431          60          12         147         3/3    builtin
+agent_framework  1.00     1072           359                1431          60          12         173         3/3    builtin
 
 Live results (Azure OpenAI): not recorded in this run.
 Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT, then run:
@@ -170,8 +170,8 @@ Control-pattern comparison (mock LLM, deterministic latency = 5 ms/call)
 patterns: react (existing tool loop), plan_execute (planner/executor/replanner), rewoo
 pattern       success_rate  prompt_tokens  completion_tokens  total_tokens  latency_ms  llm_calls  tasks  runtime
 ------------  ------------  -------------  -----------------  ------------  ----------  ---------  -----  ---------
-react         1.00          897            115                1012          65          13         3/3    tool_loop
-plan_execute  1.00          1823           237                2060          115         23         3/3    builtin
+react         1.00          2244           115                2359          65          13         3/3    tool_loop
+plan_execute  1.00          2443           237                2680          115         23         3/3    builtin
 rewoo         1.00          381            113                494           30          6          3/3    builtin
 
 Live results (Azure OpenAI): not recorded in this run.
@@ -192,6 +192,7 @@ Azure OpenAI is configured. They are blank here.
 
 `publish_research_crew` registers the crew on `AgentMesh`. A mesh that speaks
 A2A can also `GET /.well-known/agent-card.json` and `POST` `message/send`.
+The HTTP server binds to loopback only. Azure OpenAI endpoints must be `https`.
 
 <!-- run: python examples/a2a_research.py -->
 ```text
@@ -223,7 +224,7 @@ Test suite size (real collection, re-checked in CI):
 
 <!-- run: python scripts/count_tests.py -->
 ```text
-152 tests collected
+159 tests collected
 ```
 <!-- /run -->
 

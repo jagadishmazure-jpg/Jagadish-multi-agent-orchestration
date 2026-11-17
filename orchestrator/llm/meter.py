@@ -16,13 +16,19 @@ if TYPE_CHECKING:
 MOCK_CALL_MS = 5
 
 
-def count_messages(messages: list) -> int:
-    """Estimate prompt tokens for a list of orchestrator messages."""
+def count_messages(messages: list, tools: list[dict] | None = None) -> int:
+    """Estimate prompt tokens, including tool schemas and prior tool calls."""
     total = 0
     for message in messages:
         role = message.role.value if hasattr(message.role, "value") else str(message.role)
         total += count_text(role)
         total += count_text(message.content)
+        metadata = getattr(message, "metadata", None) or {}
+        tool_calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
+        if tool_calls:
+            total += count_text(json.dumps(tool_calls, sort_keys=True, default=str))
+    if tools:
+        total += count_text(json.dumps(tools, sort_keys=True, default=str))
     return total
 
 
@@ -60,7 +66,7 @@ class MeteredLLM:
             self.live = True
             self.latency_ms += elapsed_ms
         else:
-            prompt = count_messages(messages)
+            prompt = count_messages(messages, tools)
             completion = count_text(response.content)
             for call in response.tool_calls:
                 completion += count_text(call.name)

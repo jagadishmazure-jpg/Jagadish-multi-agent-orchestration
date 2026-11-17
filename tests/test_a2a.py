@@ -35,6 +35,7 @@ def _send(text: str, method: str = "message/send", request_id: int = 1) -> dict:
 def test_agent_card_advertises_the_research_skill():
     card = research_crew_card()
     assert card["name"] == "Research Crew"
+    assert card["protocolVersion"] == "0.3.0"
     assert card["skills"][0]["id"] == "research-and-report"
     assert "/.well-known/agent-card.json" in AGENT_CARD_PATHS
 
@@ -45,15 +46,17 @@ def test_message_send_and_get_return_the_report():
     task = response["result"]
     assert response["id"] == 1
     assert task["status"]["state"] == "completed"
-    report = task["artifacts"][0]["parts"][0]["text"]
-    assert "Guido van Rossum" in report
-    assert "APPROVED" in report
+    by_name = {item["name"]: item["parts"][0]["text"] for item in task["artifacts"]}
+    assert "Guido van Rossum" in by_name["research-report"]
+    assert "APPROVED" in by_name["critic-review"]
+    assert "DRAFT ARTICLE" in by_name["research-report"]
     fetched = server.handle(
         {"jsonrpc": "2.0", "id": 2, "method": "tasks/get", "params": {"id": task["id"]}}
     )
     assert fetched["result"]["artifacts"] == task["artifacts"]
     alias = server.handle(_send("Research: The origins of HTTP", method="SendMessage", request_id=3))
-    assert "Tim Berners-Lee" in alias["result"]["artifacts"][0]["parts"][0]["text"]
+    alias_report = alias["result"]["artifacts"][0]["parts"][0]["text"]
+    assert "Tim Berners-Lee" in alias_report
 
 
 def test_jsonrpc_errors_and_cancel_rules():
@@ -102,6 +105,33 @@ def test_default_mesh_can_be_reset_and_joined():
     assert first.names() == ["Research Crew"]
 
 
+def test_retry_body_limit_and_loopback():
+    server = ResearchCrewServer(llm=ResearchMockLLM(), max_tasks=2)
+    first = server.handle(_send("Research: The history of Python"))
+    again = server.handle(_send("Research: The origins of HTTP"))
+    assert again["result"]["id"] == first["result"]["id"]
+    assert len(server.tasks) == 1
+    third = server.handle(_send("Research: The relational database model", request_id=2))
+    fourth = server.handle(_send("Research: The history of Python", request_id=3))
+    assert first["result"]["id"] not in server.tasks
+    assert third["result"]["id"] in server.tasks
+    assert fourth["result"]["id"] in server.tasks
+    assert len(server.tasks) == 2
+    returned = fourth["result"]
+    returned["status"]["state"] = "tampered"
+    assert server.tasks[fourth["result"]["id"]]["status"]["state"] == "completed"
+    with pytest.raises(ValueError, match="loopback"):
+        serve(server, host="0.0.0.0")
+
+    class _Boom:
+        def complete(self, messages, tools=None):
+            raise RuntimeError("boom secret")
+
+    failed = ResearchCrewServer(llm=_Boom()).handle(_send("Research: The history of Python", request_id=8))
+    assert failed["error"]["code"] == -32000
+    assert "secret" not in failed["error"]["message"]
+
+
 def test_http_serves_the_card_and_a_message():
     server = ResearchCrewServer(llm=ResearchMockLLM(), backend="builtin")
     httpd = serve(server, port=0)
@@ -111,7 +141,9 @@ def test_http_serves_the_card_and_a_message():
         with urllib.request.urlopen(f"{base}/.well-known/agent-card.json", timeout=5) as response:
             card = json.loads(response.read().decode())
         assert card["name"] == "Research Crew"
+        assert card["protocolVersion"] == "0.3.0"
         assert card["url"] == f"{base}/"
+        assert server.card["url"] == "http://127.0.0.1:8089/"
         body = json.dumps(_send("Research: The history of Python")).encode()
         request = urllib.request.Request(
             f"{base}/rpc",

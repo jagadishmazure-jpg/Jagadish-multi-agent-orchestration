@@ -40,7 +40,10 @@ class AzureOpenAIClient:
     ) -> None:
         if not endpoint or not api_key or not deployment:
             raise ValueError("endpoint, api_key, and deployment are required")
-        self.endpoint = endpoint.strip().rstrip("/")
+        endpoint = endpoint.strip().rstrip("/")
+        if not endpoint.startswith("https://"):
+            raise ValueError("Azure OpenAI endpoint must use https")
+        self.endpoint = endpoint
         self.api_key = api_key
         self.deployment = deployment.strip()
         self.api_version = api_version.strip() or DEFAULT_API_VERSION
@@ -127,7 +130,12 @@ def _tool_payload(schema: dict) -> dict:
     properties: dict[str, dict[str, str]] = {}
     required: list[str] = []
     for name, type_name in (schema.get("parameters") or {}).items():
-        json_type = "number" if type_name in {"int", "float"} else "string"
+        if type_name in {"bool", "boolean"}:
+            json_type = "boolean"
+        elif type_name in {"int", "float"}:
+            json_type = "number"
+        else:
+            json_type = "string"
         properties[name] = {"type": json_type, "description": name}
         required.append(name)
     return {

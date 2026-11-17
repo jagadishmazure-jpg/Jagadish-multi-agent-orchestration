@@ -33,6 +33,9 @@ class ControlMockLLM:
             return self._text(_format_plan(task.initial_plan))
         if stage == "replanner":
             past = int(_required(_PAST, blob, "PAST"))
+            missing = [item for item in _OBSERVATIONS.get(task.id, {}).get(past, ()) if item not in blob]
+            if missing:
+                return self._text("FINAL: missing observation")
             try:
                 script = task.replans[past]
             except KeyError:
@@ -89,6 +92,29 @@ def _required(pattern: re.Pattern[str], blob: str, label: str) -> str:
     if found is None:
         raise ValueError(f"control prompt missing {label}")
     return found.group(1).strip()
+
+
+# Substrings that must already be in the replanner prompt. They are the tool
+# observations for that many completed steps. A replanner that drops them
+# cannot collect the scripted continuation.
+_OBSERVATIONS: dict[str, dict[int, tuple[str, ...]]] = {
+    "capitals_population_sum": {
+        1: ("Paris",),
+        2: ("Paris", "Tokyo"),
+        3: ("2100000",),
+        4: ("14000000",),
+        5: ("16100000",),
+    },
+    "canberra_twice": {
+        1: ("Canberra",),
+        2: ("470000",),
+        3: ("940000",),
+    },
+    "python_identity": {
+        1: ("Guido van Rossum",),
+        2: ("1991",),
+    },
+}
 
 
 def _format_plan(steps: tuple[str, ...]) -> str:

@@ -29,6 +29,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["orchestrator", "scenarios"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"evals/golden_research.json" = "orchestrator/frameworks/golden_research.json"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

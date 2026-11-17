@@ -100,6 +100,55 @@ def test_graph_stops_when_the_replanner_never_finishes():
         )
 
 
+def test_replanner_mock_requires_the_observation_text():
+    from orchestrator.core import Message, MessageRole
+
+    blind = ControlMockLLM().complete(
+        [
+            Message(
+                MessageRole.SYSTEM,
+                "STAGE: replanner\nTASK: capitals_population_sum\nPAST: 1",
+            ),
+            Message(MessageRole.USER, "Completed steps:\n1. search: capital of France -> unknown"),
+        ]
+    )
+    assert blind.content == "FINAL: missing observation"
+    seen = ControlMockLLM().complete(
+        [
+            Message(
+                MessageRole.SYSTEM,
+                "STAGE: replanner\nTASK: capitals_population_sum\nPAST: 1",
+            ),
+            Message(MessageRole.USER, "Completed steps:\n1. search: capital of France -> Paris"),
+        ]
+    )
+    assert "capital of Japan" in seen.content
+
+
+def test_rewoo_rejects_duplicate_and_forward_references():
+    from orchestrator.patterns.rewoo import parse_rewoo
+
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_rewoo("#E1 = search[capital of France]\n#E1 = search[capital of Japan]")
+    with pytest.raises(ValueError, match="before it is produced"):
+        parse_rewoo("#E2 = search[population of #E1]")
+
+
+def test_rewoo_max_steps_bounds_tool_calls():
+    from orchestrator.llm.client import LLMResponse
+
+    class _LongPlan(ControlMockLLM):
+        def complete(self, messages, tools=None):
+            blob = "\n".join(message.content for message in messages)
+            if "STAGE: rewoo_planner" in blob:
+                lines = "\n".join(f"#E{i} = search[capital of France]" for i in range(1, 5))
+                return LLMResponse(content=lines, model="loop")
+            return super().complete(messages, tools)
+
+    with pytest.raises(RuntimeError, match="max_steps"):
+        run_rewoo(task_by_id("python_identity"), llm=_LongPlan(), backend="builtin", max_steps=2)
+
+
 def test_rewoo_rejects_a_plan_with_no_steps():
     class _EmptyPlan(ControlMockLLM):
         def complete(self, messages, tools=None):

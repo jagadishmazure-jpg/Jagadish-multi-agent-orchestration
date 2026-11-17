@@ -65,12 +65,42 @@ def run_maf_research(
     inner = llm if llm is not None else _default_llm()
     meter = MeteredLLM(inner)
     if chosen == "agent_framework":
-        stages = asyncio.run(_run_library(topic, meter))
+        stages = _run_library_sync(topic, meter)
         runtime = "agent_framework"
     else:
         stages = _run_builtin(topic, meter)
         runtime = "builtin"
     return finish("agent_framework", runtime, topic, stages, meter)
+
+
+async def arun_maf_research(
+    topic: str,
+    llm: Any = None,
+    *,
+    backend: str = "builtin",
+) -> ResearchRun:
+    """Async entry point. Use this when an event loop is already running."""
+    topic = check_topic(topic)
+    chosen = _resolve_backend(backend)
+    inner = llm if llm is not None else _default_llm()
+    meter = MeteredLLM(inner)
+    if chosen == "agent_framework":
+        stages = await _run_library(topic, meter)
+        runtime = "agent_framework"
+    else:
+        stages = _run_builtin(topic, meter)
+        runtime = "builtin"
+    return finish("agent_framework", runtime, topic, stages, meter)
+
+
+def _run_library_sync(topic: str, meter: MeteredLLM) -> dict[str, str]:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_run_library(topic, meter))
+    raise RuntimeError(
+        "an event loop is already running; await arun_maf_research(...) instead of run_maf_research(...)"
+    )
 
 
 def _resolve_backend(backend: str) -> str:

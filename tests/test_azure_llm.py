@@ -131,6 +131,19 @@ def test_http_error_does_not_include_the_api_key(monkeypatch):
     assert "super-secret" not in str(caught.value)
 
 
+def test_http_endpoint_and_boolean_schema_are_rejected_or_mapped():
+    with pytest.raises(ValueError, match="https"):
+        AzureOpenAIClient("http://example.openai.azure.com", "k", "gpt")
+    from orchestrator.llm.azure import _tool_payload
+
+    payload = _tool_payload(
+        {"name": "flag", "description": "set it", "parameters": {"enabled": "bool", "count": "int"}}
+    )
+    properties = payload["function"]["parameters"]["properties"]
+    assert properties["enabled"]["type"] == "boolean"
+    assert properties["count"]["type"] == "number"
+
+
 def test_missing_choices_raise(monkeypatch):
     class _Response:
         def __enter__(self):

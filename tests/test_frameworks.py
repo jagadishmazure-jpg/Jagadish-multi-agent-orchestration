@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from orchestrator.core import Message, MessageRole
 from orchestrator.frameworks import compare_frameworks, count_code_lines, load_cases
 from orchestrator.frameworks.compare import _MODULES, code_lines_for
 from orchestrator.frameworks.crewai_research import run_crewai_research
@@ -83,10 +84,47 @@ def test_comparison_is_deterministic_and_prompt_sizes_differ():
     assert len({score.total_tokens for score in first}) == 3
 
 
+def test_maf_async_entrypoint_and_running_loop():
+    import asyncio
+
+    from orchestrator.frameworks.maf_research import _run_library_sync, arun_maf_research
+
+    async def _check() -> None:
+        run = await arun_maf_research(
+            "The history of Python", llm=ResearchMockLLM(), backend="builtin"
+        )
+        assert run.quality == 1.0
+        with pytest.raises(RuntimeError, match="arun_maf_research"):
+            _run_library_sync("The history of Python", None)
+
+    asyncio.run(_check())
+
+
+def test_research_mock_refuses_a_stage_without_the_previous_text():
+    reply = ResearchMockLLM().complete(
+        [
+            Message(MessageRole.SYSTEM, "ROLE: researcher"),
+            Message(MessageRole.USER, "Topic: The history of Python"),
+        ]
+    )
+    assert "REJECTED" in reply.content
+    planned = ResearchMockLLM().complete(
+        [
+            Message(MessageRole.SYSTEM, "ROLE: researcher"),
+            Message(MessageRole.USER, "Topic: The history of Python\nRESEARCH PLAN:\n1. dates"),
+        ]
+    )
+    assert "Guido van Rossum" in planned.content
+
+
 def test_quality_score_requires_approval():
     case = load_cases()[0]
     assert quality_score("Guido van Rossum 1991", case) == 0.0
+    assert quality_score("NOT APPROVED. Guido van Rossum 1991", case) == 0.0
     assert quality_score(case["review"], case) == 1.0
+    original = case["topic"]
+    case["topic"] = "changed by the caller"
+    assert load_cases()[0]["topic"] == original
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")

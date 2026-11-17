@@ -8,6 +8,9 @@ JSON-RPC can call :class:`ResearchCrewServer` the same way.
 
 from __future__ import annotations
 
+import copy
+import threading
+
 from .server import ResearchCrewServer
 
 
@@ -16,24 +19,29 @@ class AgentMesh:
 
     def __init__(self) -> None:
         self._servers: dict[str, ResearchCrewServer] = {}
+        self._lock = threading.Lock()
 
     def register(self, server: ResearchCrewServer) -> None:
         name = server.card["name"]
-        if name in self._servers:
-            raise ValueError(f"agent {name!r} is already on the mesh")
-        self._servers[name] = server
+        with self._lock:
+            if name in self._servers:
+                raise ValueError(f"agent {name!r} is already on the mesh")
+            self._servers[name] = server
 
     def names(self) -> list[str]:
-        return list(self._servers)
+        with self._lock:
+            return list(self._servers)
 
     def discover(self) -> list[dict]:
-        return [server.card for server in self._servers.values()]
+        with self._lock:
+            return [copy.deepcopy(server.card) for server in self._servers.values()]
 
     def get(self, name: str) -> ResearchCrewServer:
-        try:
-            return self._servers[name]
-        except KeyError:
-            raise KeyError(f"no agent named {name!r} on the mesh") from None
+        with self._lock:
+            try:
+                return self._servers[name]
+            except KeyError:
+                raise KeyError(f"no agent named {name!r} on the mesh") from None
 
     def send(self, name: str, text: str, *, request_id: int | str = 1) -> dict:
         server = self.get(name)

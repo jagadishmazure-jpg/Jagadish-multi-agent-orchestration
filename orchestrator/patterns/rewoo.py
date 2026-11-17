@@ -20,6 +20,7 @@ from .plan_execute import control_registry, default_control_llm
 from .tasks import ControlTask
 
 _LINE = re.compile(r"^#(E\d+)\s*=\s*([A-Za-z_][\w]*)\[(.*)\]\s*$")
+_REF = re.compile(r"#(E\d+)")
 
 
 @dataclass
@@ -53,6 +54,14 @@ def parse_rewoo(plan_text: str) -> list[tuple[str, str, str]]:
             steps.append((found.group(1), found.group(2), found.group(3)))
     if not steps:
         raise ValueError(f"ReWOO plan has no #E steps: {plan_text!r}")
+    seen: set[str] = set()
+    for evidence_id, _tool_name, argument in steps:
+        if evidence_id in seen:
+            raise ValueError(f"duplicate evidence id {evidence_id}")
+        for used in _REF.findall(argument):
+            if used not in seen:
+                raise ValueError(f"{evidence_id} references #{used} before it is produced")
+        seen.add(evidence_id)
     return steps
 
 
@@ -76,7 +85,7 @@ def run_rewoo(
     meter = MeteredLLM(inner)
     tools = registry if registry is not None else control_registry()
     graph_cls, start, end, runtime = graph_types(backend)
-    compiled = _compile(graph_cls, start, end, meter, tools)
+    compiled = _compile(graph_cls, start, end, meter, tools, max_steps)
     state = compiled.invoke(
         {
             "task_id": task.id,
@@ -106,7 +115,14 @@ def run_rewoo(
     )
 
 
-def _compile(graph_cls: Any, start: Any, end: Any, meter: MeteredLLM, tools: ToolRegistry) -> Any:
+def _compile(
+    graph_cls: Any,
+    start: Any,
+    end: Any,
+    meter: MeteredLLM,
+    tools: ToolRegistry,
+    max_steps: int,
+) -> Any:
     from typing import TypedDict
 
     class ReWOOState(TypedDict, total=False):
@@ -136,7 +152,12 @@ def _compile(graph_cls: Any, start: Any, end: Any, meter: MeteredLLM, tools: Too
     def worker(state: dict) -> dict:
         evidence: dict[str, str] = {}
         trace: list[dict] = []
-        for evidence_id, tool_name, argument in parse_rewoo(state["plan_text"]):
+        steps = parse_rewoo(state["plan_text"])
+        if len(steps) > max_steps:
+            raise RuntimeError(
+                f"ReWOO plan has {len(steps)} tool steps, above max_steps {max_steps}"
+            )
+        for evidence_id, tool_name, argument in steps:
             concrete = substitute(argument, evidence)
             if tool_name == "search":
                 arguments: dict[str, str] = {"query": concrete}
